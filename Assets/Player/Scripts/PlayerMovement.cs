@@ -18,6 +18,9 @@ public class PlayerMovement : MonoBehaviour
     private bool jumping;
     private bool isGrounded;
     private bool wasGroundedLastFrame;
+    private float groundSpeedMultiplier = 1f;
+    private GroundPlatformEffect activeJumpPlatform;
+    private bool touchedActiveJumpPlatformThisFrame;
     private Vector3 velocity;
     private Vector3 velocityInput;
     private Vector3 velocityPhysics;
@@ -50,6 +53,9 @@ public class PlayerMovement : MonoBehaviour
         controller.enabled = true;
 
         velocityPhysics = Vector3.zero;
+        groundSpeedMultiplier = 1f;
+        activeJumpPlatform = null;
+        touchedActiveJumpPlatformThisFrame = false;
         jumping = false;
         jumpHeldTimer = 0;
         jumpPreloadTimer = 0;
@@ -80,7 +86,12 @@ public class PlayerMovement : MonoBehaviour
     void FixedUpdate()
     {
         // --isGrounded logic--
+        groundSpeedMultiplier = 1f;
+        touchedActiveJumpPlatformThisFrame = false;
         isGrounded = RaycastTouchesGround();
+        if (!touchedActiveJumpPlatformThisFrame) {
+            activeJumpPlatform = null;
+        }
         if (isGrounded && !wasGroundedLastFrame) {
             GroundEnter();
         }
@@ -109,7 +120,7 @@ public class PlayerMovement : MonoBehaviour
         Vector2 moveInput = Vector2.ClampMagnitude(controls.MoveInput(), 1f); //get move input vector and clamp to 1
         velocityInput = transform.right * moveInput.x + transform.forward * moveInput.y; //get input velocity
   
-        velocityInput *= moveSpeed; //scale by move speed
+        velocityInput *= moveSpeed * groundSpeedMultiplier; //scale by move speed and the current ground effect
         
         velocity = velocityInput + velocityPhysics; //combine input velocity and physics velocity
         
@@ -145,6 +156,27 @@ public class PlayerMovement : MonoBehaviour
     void EndJump(){
         jumping = false;
     }
+
+    /// <summary>
+    /// Apply a movement-speed multiplier for the current physics step.
+    /// Ground effects must call this every step while they are active.
+    /// </summary>
+    public void ApplyGroundSpeedMultiplier(float multiplier)
+    {
+        groundSpeedMultiplier = Mathf.Max(0f, multiplier);
+    }
+
+    /// <summary>
+    /// Launch the player upward without requiring normal jumping to be enabled.
+    /// </summary>
+    public void LaunchUpward(float launchVelocity)
+    {
+        velocityPhysics.y = Mathf.Max(0f, launchVelocity);
+        jumping = false;
+        jumpHeldTimer = 0f;
+        jumpPreloadTimer = 0f;
+        coyoteTimer = 0f;
+    }
     
     /// <summary>
     /// Called when you first start touching the ground
@@ -165,7 +197,22 @@ public class PlayerMovement : MonoBehaviour
     /// </summary>
     void GroundStay(RaycastHit hit)
     {
-        //USE THIS IF YOU WANT SOMETHING TO HAPPEN EACH FRAME YOU ARE TOUCHING THE GROUND
+        GroundPlatformEffect effect = hit.collider.GetComponentInParent<GroundPlatformEffect>();
+        if (effect == null) {
+            return;
+        }
+
+        if (effect.Type == GroundPlatformEffect.EffectType.Jump) {
+            if (activeJumpPlatform == effect) {
+                touchedActiveJumpPlatformThisFrame = true;
+                return;
+            }
+
+            activeJumpPlatform = effect;
+            touchedActiveJumpPlatformThisFrame = true;
+        }
+
+        effect.ApplyTo(this);
     }
 
     /// <summary>
